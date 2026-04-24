@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, Menu, Send, Paperclip, Smile, MoreVertical, Phone, Video, ArrowLeft, Check, CheckCheck, Settings } from 'lucide-react';
+import { Search, Menu, Send, Paperclip, Smile, MoreVertical, Phone, Video, ArrowLeft, Check, CheckCheck, Settings, X, LogOut, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { databases, APPWRITE_CONFIG, client, account } from './lib/appwrite';
 import { ID, Query, OAuthProvider } from 'appwrite';
@@ -25,7 +25,7 @@ type User = {
 const CURRENT_USER_ID = 'me';
 
 export default function App() {
-  const [user, setUser] = useState<{ name: string; avatar: string } | null>(null);
+  const [user, setUser] = useState<{ $id?: string; name: string; avatar: string; email?: string } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -34,6 +34,7 @@ export default function App() {
   const [isMobileListVisible, setIsMobileListVisible] = useState(true);
   const [loading, setLoading] = useState(true);
   const [isAppwriteReady, setIsAppwriteReady] = useState(!!import.meta.env.VITE_APPWRITE_PROJECT_ID);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -49,8 +50,10 @@ export default function App() {
           // 1. Get the current Appwrite account/session
           const currentAccount = await account.get();
           setUser({ 
+            $id: currentAccount.$id,
             name: currentAccount.name || 'USER_' + currentAccount.$id.slice(0, 5), 
-             avatar: 'https://i.pravatar.cc/150?u=' + currentAccount.$id 
+            avatar: 'https://i.pravatar.cc/150?u=' + currentAccount.$id,
+            email: currentAccount.email
           });
 
           // 2. Fetch data
@@ -106,7 +109,8 @@ export default function App() {
           }
       } else {
           // Simulation of Google OAuth result
-          const mockResult = { name: 'GUEST_' + Math.floor(Math.random() * 1000), avatar: 'https://i.pravatar.cc/150?u=me' };
+          const mockId = Math.floor(Math.random() * 1000).toString();
+          const mockResult = { $id: mockId, name: 'GUEST_' + mockId, avatar: 'https://i.pravatar.cc/150?u=me', email: 'guest@coldgram.net' };
           setUser(mockResult);
           localStorage.setItem('coldgram_user', JSON.stringify(mockResult));
       }
@@ -215,11 +219,11 @@ export default function App() {
             </button>
             <h1 className="text-sm font-bold tracking-tight text-sky-500 italic uppercase">Cold_Unit</h1>
             <div 
-              onClick={handleLogout}
-              className="w-10 h-10 rounded-xl bg-[#1e293b] border border-[#334155] flex items-center justify-center cursor-pointer hover:border-red-500/50 transition-all group overflow-hidden"
+              onClick={() => setIsProfileModalOpen(true)}
+              className="w-10 h-10 rounded-xl bg-[#1e293b] border border-[#334155] flex items-center justify-center cursor-pointer hover:border-sky-500/50 transition-all group overflow-hidden relative"
             >
-              <img src={user.avatar} className="w-full h-full object-cover group-hover:opacity-20" alt="Me" />
-              <div className="absolute opacity-0 group-hover:opacity-100 text-[10px] text-red-500 font-bold uppercase">OUT</div>
+              <img src={user.avatar} className="w-full h-full object-cover group-hover:opacity-40 transition-opacity" alt="Me" />
+              <div className="absolute opacity-0 group-hover:opacity-100 text-[8px] text-sky-400 font-bold uppercase tracking-widest z-10 transition-opacity">DATA</div>
             </div>
           </div>
           <div className="relative">
@@ -392,6 +396,72 @@ export default function App() {
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {isProfileModalOpen && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#020617]/80 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-sm bg-[#0f172a] border border-[#1e293b] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            >
+              <div className="p-4 border-b border-[#1e293b] flex justify-between items-center bg-[#020617]/50">
+                <div className="flex items-center gap-2 text-sky-500">
+                  <Shield size={16} />
+                  <span className="text-xs font-bold uppercase tracking-widest">Operator_Profile</span>
+                </div>
+                <button 
+                  onClick={() => setIsProfileModalOpen(false)}
+                  className="text-[#64748b] hover:text-white transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="p-8 flex flex-col items-center border-b border-[#1e293b]">
+                <div className="w-24 h-24 rounded-2xl border-2 border-sky-500/50 p-1 mb-4 relative overflow-hidden">
+                  <img src={user.avatar} className="w-full h-full object-cover rounded-xl grayscale hover:grayscale-0 transition-all duration-500" alt={user.name} />
+                </div>
+                <h2 className="text-xl font-bold uppercase tracking-wider text-white mb-1 truncate max-w-full">{user.name}</h2>
+                <div className="text-xs text-sky-400 font-mono bg-sky-500/10 px-3 py-1 rounded-full border border-sky-500/20 truncate max-w-full">
+                  @{user.name.toLowerCase().replace(/\s+/g, '_')}
+                </div>
+              </div>
+
+              <div className="p-6 flex flex-col gap-4">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] text-[#64748b] uppercase tracking-widest font-mono">Internal ID</span>
+                  <div className="text-sm text-[#cbd5e1] font-mono bg-[#020617] p-2 rounded-lg border border-[#1e293b] break-all">
+                    {user.$id || 'N/A'}
+                  </div>
+                </div>
+                {user.email && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] text-[#64748b] uppercase tracking-widest font-mono">Email Clearance</span>
+                    <div className="text-sm text-[#cbd5e1] font-mono bg-[#020617] p-2 rounded-lg border border-[#1e293b] break-all">
+                      {user.email}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-[#020617] mt-auto">
+                <button 
+                  onClick={() => {
+                    setIsProfileModalOpen(false);
+                    handleLogout();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white py-3 rounded-xl font-bold transition-all text-xs uppercase tracking-widest border border-red-500/20 hover:border-red-500"
+                >
+                  <LogOut size={16} />
+                  Terminate Session
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <style>{`
         .custom-scrollbar::-webkit-scrollbar {
