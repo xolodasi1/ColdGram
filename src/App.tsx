@@ -49,12 +49,26 @@ export default function App() {
         try {
           // 1. Get the current Appwrite account/session
           const currentAccount = await account.get();
-          setUser({ 
+          const authUser = { 
             $id: currentAccount.$id,
             name: currentAccount.name || 'USER_' + currentAccount.$id.slice(0, 5), 
             avatar: 'https://i.pravatar.cc/150?u=' + currentAccount.$id,
             email: currentAccount.email
-          });
+          };
+          setUser(authUser);
+
+          // 1.5 На всякий случай пытаемся записать юзера в БД (если коллекция поддерживает эти поля)
+          try {
+            await databases.getDocument(APPWRITE_CONFIG.databaseId!, APPWRITE_CONFIG.collections.users!, authUser.$id);
+          } catch (e) {
+            // Document not found, let's create
+            await databases.createDocument(APPWRITE_CONFIG.databaseId!, APPWRITE_CONFIG.collections.users!, authUser.$id, {
+                name: authUser.name,
+                avatar: authUser.avatar,
+                status: 'online',
+                nickname: authUser.name.toLowerCase().replace(/\s+/g, '_')
+            }).catch(() => {}); // Игнорируем ошибку, если схема БД еще не настроена
+          }
 
           // 2. Fetch data
           await fetchUsersFromAppwrite();
@@ -62,6 +76,7 @@ export default function App() {
           // Proceed with mock data if not logged in or Appwrite fails
           console.warn("Appwrite session not found, using local node.", (e as Error).message);
           setUser(mockUser);
+          await fetchUsersFromAppwrite(); // Пытаемся все равно получить список (может быть публичным)
         }
       } else {
         // Just use mock data if no keys
@@ -88,8 +103,23 @@ export default function App() {
   }, [messages]);
 
   const fetchUsersFromAppwrite = async () => {
-    const response = await databases.listDocuments(APPWRITE_CONFIG.databaseId!, APPWRITE_CONFIG.collections.users!);
-    setUsers(response.documents as unknown as User[]);
+    try {
+      const response = await databases.listDocuments(APPWRITE_CONFIG.databaseId!, APPWRITE_CONFIG.collections.users!);
+      let fetchedUsers = response.documents as unknown as User[];
+      
+      // Если в БД мало пользователей (например, только сам тестировщик),
+      // добавляем системных ботов/моковых юзеров для демонстрации
+      if (fetchedUsers.length < 3) {
+        const dbUserIds = new Set(fetchedUsers.map(u => u.$id));
+        const mocksToAdd = MOCK_USERS_LOCAL.filter(m => !dbUserIds.has(m.$id));
+        fetchedUsers = [...fetchedUsers, ...mocksToAdd];
+      }
+      
+      setUsers(fetchedUsers);
+    } catch (err) {
+      console.warn("Appwrite session not found, using local node.", (err as Error).message);
+      setUsers(MOCK_USERS_LOCAL);
+    }
   };
 
   const fetchMessagesFromAppwrite = async (userId: string) => {
@@ -287,8 +317,11 @@ export default function App() {
             </div>
           )) : (
               <div className="p-8 text-center text-[10px] text-[#475569] font-mono leading-loose">
-                  ERROR: NO ACTIVE CHANNELS FOUND.<br/>
-                  PLEASE SEED DATABASE.
+                  {searchQuery ? (
+                    <>NO ENTITIES FOUND MATCHING '{searchQuery}'.<br/>TRY GLOBAL NETWORK SEARCH.</>
+                  ) : (
+                    <>ERROR: NO ACTIVE CHANNELS FOUND.<br/>PLEASE SEED DATABASE.</>
+                  )}
               </div>
           )}
         </div>
