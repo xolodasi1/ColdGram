@@ -24,18 +24,6 @@ type User = {
 
 const CURRENT_USER_ID = 'me';
 
-const MOCK_USERS_LOCAL: User[] = [
-  { $id: '1', name: 'ALEKSEY_SMIRNOV', avatar: 'https://i.pravatar.cc/150?u=a1', status: 'online', lastMessage: 'SYSTEM: UPLINK_SUCCESS', lastMessageTime: '10:30', nickname: 'asmir' } as any,
-  { $id: '2', name: 'WORK_NODE_04', avatar: 'https://i.pravatar.cc/150?u=a2', status: 'offline', lastMessage: 'PENDING_REPORT_042', lastMessageTime: 'Вчера', nickname: 'node4' } as any,
-  { $id: '6', name: 'ROOT_ADMIN', avatar: 'https://i.pravatar.cc/150?u=a6', status: 'online', lastMessage: 'THE_WALL_IS_GONE', lastMessageTime: '2007', unreadCount: 1, nickname: 'durov' } as any,
-];
-
-const MOCK_MESSAGES_LOCAL: Message[] = [
-  { $id: 'm1', text: 'Terminal initialized. Initializing secure handshake...', timestamp: '10:25', senderId: '1', isRead: true },
-  { $id: 'm2', text: 'Handshake accepted. Protocol X-01 active.', timestamp: '10:26', senderId: 'me', isRead: true },
-  { $id: 'm3', text: 'This is the cold work environment you requested. No noise. Pure data.', timestamp: '10:27', senderId: '1', isRead: false },
-];
-
 export default function App() {
   const [user, setUser] = useState<{ name: string; avatar: string } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -71,12 +59,10 @@ export default function App() {
           // Proceed with mock data if not logged in or Appwrite fails
           console.warn("Appwrite session not found, using local node.", (e as Error).message);
           setUser(mockUser);
-          setUsers(MOCK_USERS_LOCAL);
         }
       } else {
         // Just use mock data if no keys
         setUser(mockUser);
-        setUsers(MOCK_USERS_LOCAL);
       }
       setLoading(false);
     };
@@ -88,8 +74,6 @@ export default function App() {
     if (activeUserId) {
       if (isAppwriteReady) {
         fetchMessagesFromAppwrite(activeUserId);
-      } else {
-        setMessages(MOCK_MESSAGES_LOCAL);
       }
     }
   }, [activeUserId, isAppwriteReady]);
