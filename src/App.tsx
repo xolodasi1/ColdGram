@@ -24,7 +24,20 @@ type User = {
 
 const CURRENT_USER_ID = 'me';
 
+const MOCK_USERS_LOCAL: User[] = [
+  { $id: '1', name: 'ALEKSEY_SMIRNOV', avatar: 'https://i.pravatar.cc/150?u=a1', status: 'online', lastMessage: 'SYSTEM: UPLINK_SUCCESS', lastMessageTime: '10:30', nickname: 'asmir' } as any,
+  { $id: '2', name: 'WORK_NODE_04', avatar: 'https://i.pravatar.cc/150?u=a2', status: 'offline', lastMessage: 'PENDING_REPORT_042', lastMessageTime: 'Вчера', nickname: 'node4' } as any,
+  { $id: '6', name: 'ROOT_ADMIN', avatar: 'https://i.pravatar.cc/150?u=a6', status: 'online', lastMessage: 'THE_WALL_IS_GONE', lastMessageTime: '2007', unreadCount: 1, nickname: 'durov' } as any,
+];
+
+const MOCK_MESSAGES_LOCAL: Message[] = [
+  { $id: 'm1', text: 'Terminal initialized. Initializing secure handshake...', timestamp: '10:25', senderId: '1', isRead: true },
+  { $id: 'm2', text: 'Handshake accepted. Protocol X-01 active.', timestamp: '10:26', senderId: 'me', isRead: true },
+  { $id: 'm3', text: 'This is the cold work environment you requested. No noise. Pure data.', timestamp: '10:27', senderId: '1', isRead: false },
+];
+
 export default function App() {
+  const [user, setUser] = useState<{ name: string; avatar: string } | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -32,39 +45,43 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileListVisible, setIsMobileListVisible] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [isConfigured, setIsConfigured] = useState(!!import.meta.env.VITE_APPWRITE_PROJECT_ID);
+  const [isAppwriteReady, setIsAppwriteReady] = useState(!!import.meta.env.VITE_APPWRITE_PROJECT_ID);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initial load
+  // Initial load logic with fallback
   useEffect(() => {
-    if (isConfigured) {
-        fetchUsers();
-        // Setup real-time listeners
-        const unsubscribe = client.subscribe(
-            [`databases.${APPWRITE_CONFIG.databaseId}.collections.${APPWRITE_CONFIG.collections.messages}.documents`],
-            (response) => {
-                const payload = response.payload as Message;
-                // If the message is for the active chat, update messages state
-                // This is a simplified check
-                if (activeUserId && (payload.senderId === activeUserId || payload.senderId === CURRENT_USER_ID)) {
-                    // Only fetch if it's relevant. Better to just fetch all messages for current chat again or append if it's new
-                     fetchMessages(activeUserId);
-                }
-                fetchUsers(); // Refresh sidebar for all changes
-            }
-        );
-        return () => unsubscribe();
-    } else {
-        setLoading(false);
-    }
-  }, [isConfigured, activeUserId]);
+    const initData = async () => {
+      // Restore local session
+      const saved = localStorage.getItem('coldgram_user');
+      if (saved) setUser(JSON.parse(saved));
 
+      if (isAppwriteReady) {
+        try {
+          await fetchUsersFromAppwrite();
+        } catch (e) {
+          console.warn("Appwrite failed, using local node.");
+          setUsers(MOCK_USERS_LOCAL);
+        }
+      } else {
+        // Just use mock data if no keys
+        setUsers(MOCK_USERS_LOCAL);
+      }
+      setLoading(false);
+    };
+    initData();
+  }, [isAppwriteReady]);
+
+  // Handle message updates
   useEffect(() => {
-    if (activeUserId && isConfigured) {
-      fetchMessages(activeUserId);
+    if (activeUserId) {
+      if (isAppwriteReady) {
+        fetchMessagesFromAppwrite(activeUserId);
+      } else {
+        setMessages(MOCK_MESSAGES_LOCAL);
+      }
     }
-  }, [activeUserId]);
+  }, [activeUserId, isAppwriteReady]);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -72,90 +89,89 @@ export default function App() {
     }
   }, [messages]);
 
-  const fetchUsers = async () => {
-    if (!APPWRITE_CONFIG.collections.users) return;
-    try {
-      const response = await databases.listDocuments(
-          APPWRITE_CONFIG.databaseId!,
-          APPWRITE_CONFIG.collections.users!,
-          [Query.limit(100)]
-      );
-      setUsers(response.documents as unknown as User[]);
-    } catch (err) {
-      console.error('Appwrite User Fetch Error:', err);
-    } finally {
-      setLoading(false);
-    }
+  const fetchUsersFromAppwrite = async () => {
+    const response = await databases.listDocuments(APPWRITE_CONFIG.databaseId!, APPWRITE_CONFIG.collections.users!);
+    setUsers(response.documents as unknown as User[]);
   };
 
-  const fetchMessages = async (userId: string) => {
-    if (!APPWRITE_CONFIG.collections.messages) return;
-    try {
-      // In a real app, you'd filter by sender and recipient
-      // Here we assume a simple test model where messages are just global for demo
-      const response = await databases.listDocuments(
-          APPWRITE_CONFIG.databaseId!,
-          APPWRITE_CONFIG.collections.messages!,
-          [
-              Query.orderAsc('$createdAt'),
-              Query.limit(100)
-          ]
-      );
-      setMessages(response.documents as unknown as Message[]);
-    } catch (err) {
-      console.error('Appwrite Message Fetch Error:', err);
-    }
+  const fetchMessagesFromAppwrite = async (userId: string) => {
+    const response = await databases.listDocuments(APPWRITE_CONFIG.databaseId!, APPWRITE_CONFIG.collections.messages!, [Query.orderAsc('$createdAt')]);
+    setMessages(response.documents as unknown as Message[]);
+  };
+
+  const handleLogin = () => {
+      // Simulation of Google OAuth result
+      const mockResult = { name: 'GUEST_' + Math.floor(Math.random() * 1000), avatar: 'https://i.pravatar.cc/150?u=me' };
+      setUser(mockResult);
+      localStorage.setItem('coldgram_user', JSON.stringify(mockResult));
+  };
+
+  const handleLogout = () => {
+      setUser(null);
+      localStorage.removeItem('coldgram_user');
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !activeUserId || !isConfigured) return;
+    if (!inputText.trim() || !activeUserId) return;
 
     const text = inputText.trim();
+    const tempId = Date.now().toString();
+    const newMsg: Message = {
+      $id: tempId,
+      text,
+      senderId: CURRENT_USER_ID,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isRead: false
+    };
+
+    setMessages(prev => [...prev, newMsg]);
     setInputText('');
 
-    try {
-      await databases.createDocument(
-        APPWRITE_CONFIG.databaseId!,
-        APPWRITE_CONFIG.collections.messages!,
-        ID.unique(),
-        {
-          text,
-          senderId: CURRENT_USER_ID,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isRead: false,
-          recipientId: activeUserId // Store who it's for
-        }
-      );
-    } catch (err) {
-      console.error('Appwrite Send Error:', err);
+    if (isAppwriteReady) {
+      try {
+        await databases.createDocument(APPWRITE_CONFIG.databaseId!, APPWRITE_CONFIG.collections.messages!, ID.unique(), {
+          text, senderId: CURRENT_USER_ID, timestamp: newMsg.timestamp, isRead: false
+        });
+      } catch (err) {
+        console.error("Transmission error:", err);
+      }
     }
   };
 
   const activeUser = users.find(u => u.$id === activeUserId);
-  const filteredUsers = users.filter(u => u.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  
+  // Search logic by name and nickname
+  const filteredUsers = users.filter(u => 
+    u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (u as any).nickname?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  if (!isConfigured) {
+  if (!user) {
       return (
-          <div className="h-screen w-full flex flex-col items-center justify-center bg-[#020617] text-[#f1f5f9] p-8 text-center">
-              <div className="w-16 h-16 bg-sky-500/10 rounded-2xl flex items-center justify-center mb-6 border border-sky-500/20">
-                  <Settings className="text-sky-500 animate-spin-slow" size={32} />
-              </div>
-              <h1 className="text-xl font-bold tracking-tight mb-4 uppercase">Configuration Required</h1>
-              <p className="text-sm text-[#94a3b8] max-w-md leading-relaxed mb-8">
-                  Чтобы использовать <span className="text-sky-400">Appwrite</span>, настройте переменные окружения в панели <span className="text-white font-semibold">Secrets</span>.
-              </p>
-              <div className="grid grid-cols-1 gap-3 w-full max-w-sm text-left font-mono text-[10px] text-[#475569]">
-                  <div className="p-3 bg-[#0f172a] border border-[#1e293b] rounded-lg">VITE_APPWRITE_PROJECT_ID</div>
-                  <div className="p-3 bg-[#0f172a] border border-[#1e293b] rounded-lg">VITE_APPWRITE_DATABASE_ID</div>
-                  <div className="p-3 bg-[#0f172a] border border-[#1e293b] rounded-lg">VITE_APPWRITE_COLLECTION_MESSAGES_ID</div>
-              </div>
-              <button 
-                onClick={() => setIsConfigured(true)} // Manually try if they set it
-                className="mt-8 px-6 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold transition-all uppercase tracking-widest"
+          <div className="h-screen w-full flex items-center justify-center bg-[#020617] p-6">
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="w-full max-w-sm bg-[#0f172a] border border-[#1e293b] p-8 rounded-2xl shadow-3xl text-center"
               >
-                  Check Connection
-              </button>
+                  <div className="w-16 h-16 bg-sky-500/10 rounded-2xl flex items-center justify-center mb-8 mx-auto border border-sky-500/20">
+                      <Send className="text-sky-500 rotate-12" size={32} />
+                  </div>
+                  <h1 className="text-2xl font-black text-white mb-2 uppercase tracking-tighter italic">COLD_GRAM</h1>
+                  <p className="text-xs text-[#64748b] font-mono tracking-widest uppercase mb-10">Secure Data Interface v4.1</p>
+                  
+                  <button 
+                    onClick={handleLogin}
+                    className="w-full flex items-center justify-center gap-3 bg-white text-black py-4 px-6 rounded-xl font-bold transition-all hover:bg-slate-100 active:scale-95 mb-4 shadow-xl shadow-white/5"
+                  >
+                      <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
+                      Sign with Google
+                  </button>
+                  <p className="text-[9px] text-[#334155] font-mono tracking-tighter uppercase italic">
+                      SYSTEM_STATUS: STANDBY... AWAITING_AUTH
+                  </p>
+              </motion.div>
           </div>
       )
   }
@@ -184,18 +200,24 @@ export default function App() {
             <button className="p-2 text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1e293b] rounded-lg transition-colors">
               <Menu size={20} />
             </button>
-            <h1 className="text-sm font-bold tracking-tight text-sky-500 italic">COLD_PROTOCOL</h1>
-            <div className="w-8 h-8 rounded-full bg-[#1e293b] border border-[#334155] flex items-center justify-center text-[10px] font-bold text-sky-500">A</div>
+            <h1 className="text-sm font-bold tracking-tight text-sky-500 italic uppercase">Cold_Unit</h1>
+            <div 
+              onClick={handleLogout}
+              className="w-10 h-10 rounded-xl bg-[#1e293b] border border-[#334155] flex items-center justify-center cursor-pointer hover:border-red-500/50 transition-all group overflow-hidden"
+            >
+              <img src={user.avatar} className="w-full h-full object-cover group-hover:opacity-20" alt="Me" />
+              <div className="absolute opacity-0 group-hover:opacity-100 text-[10px] text-red-500 font-bold uppercase">OUT</div>
+            </div>
           </div>
           <div className="relative">
             <input 
               type="text" 
-              placeholder="Filter channels..." 
+              placeholder="Search by nickname..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#020617] text-[#f1f5f9] placeholder-[#475569] rounded-lg py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-sky-500/50 transition-all border border-[#1e293b]"
+              className="w-full bg-[#020617] text-[#f1f5f9] placeholder-[#475569] rounded-lg py-2.5 pl-10 pr-4 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500/50 transition-all border border-[#1e293b] font-mono"
             />
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#475569]" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#475569]" />
           </div>
         </div>
 
