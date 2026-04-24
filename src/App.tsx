@@ -159,10 +159,18 @@ export default function App() {
   const activeUser = users.find(u => u.$id === activeUserId);
   
   // Search logic by name and nickname
-  const filteredUsers = users.filter(u => 
-    u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (u as any).nickname?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredUsers = users.filter(u => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase().trim();
+    const nameStr = u.name ? u.name.toLowerCase() : '';
+    const nickStr = (u as any).nickname ? (u as any).nickname.toLowerCase() : nameStr.replace(/\s+/g, '_');
+    
+    if (q.startsWith('@')) {
+      return nickStr.includes(q.substring(1));
+    }
+    
+    return nameStr.includes(q) || nickStr.includes(q);
+  });
 
   if (!user) {
       return (
@@ -229,7 +237,7 @@ export default function App() {
           <div className="relative">
             <input 
               type="text" 
-              placeholder="Search by nickname..." 
+              placeholder="Search by name or @nickname..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-[#020617] text-[#f1f5f9] placeholder-[#475569] rounded-lg py-2.5 pl-10 pr-4 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500/50 transition-all border border-[#1e293b] font-mono"
@@ -263,7 +271,10 @@ export default function App() {
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <p className="text-xs text-[#94a3b8] truncate pr-2 italic opacity-60">
+                  <p className="text-xs text-[#94a3b8] truncate pr-2 italic opacity-60 flex-1">
+                    <span className="text-sky-500/80 mr-2 not-italic font-mono text-[10px]">
+                      @{(user as any).nickname || user.name.toLowerCase().replace(/\s+/g, '_')}
+                    </span>
                     {user.lastMessage || 'Channel silent...'}
                   </p>
                   {user.unreadCount ? (
