@@ -1,0 +1,6 @@
+{
+  "name": "ColdGram",
+  "description": "Минималистичный клон Telegram с авторизацией и чатами в реальном времени.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
