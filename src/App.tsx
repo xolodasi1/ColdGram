@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Search, Menu, Send, Paperclip, Smile, MoreVertical, Phone, Video, ArrowLeft, Check, CheckCheck, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { databases, APPWRITE_CONFIG, client } from './lib/appwrite';
-import { ID, Query } from 'appwrite';
+import { databases, APPWRITE_CONFIG, client, account } from './lib/appwrite';
+import { ID, Query, OAuthProvider } from 'appwrite';
 
 type Message = {
   $id: string;
@@ -54,17 +54,28 @@ export default function App() {
     const initData = async () => {
       // Restore local session
       const saved = localStorage.getItem('coldgram_user');
-      if (saved) setUser(JSON.parse(saved));
+      let mockUser = saved ? JSON.parse(saved) : null;
 
       if (isAppwriteReady) {
         try {
+          // 1. Get the current Appwrite account/session
+          const currentAccount = await account.get();
+          setUser({ 
+            name: currentAccount.name || 'USER_' + currentAccount.$id.slice(0, 5), 
+             avatar: 'https://i.pravatar.cc/150?u=' + currentAccount.$id 
+          });
+
+          // 2. Fetch data
           await fetchUsersFromAppwrite();
         } catch (e) {
-          console.warn("Appwrite failed, using local node.");
+          // Proceed with mock data if not logged in or Appwrite fails
+          console.warn("Appwrite session not found, using local node.", (e as Error).message);
+          setUser(mockUser);
           setUsers(MOCK_USERS_LOCAL);
         }
       } else {
         // Just use mock data if no keys
+        setUser(mockUser);
         setUsers(MOCK_USERS_LOCAL);
       }
       setLoading(false);
@@ -100,13 +111,31 @@ export default function App() {
   };
 
   const handleLogin = () => {
-      // Simulation of Google OAuth result
-      const mockResult = { name: 'GUEST_' + Math.floor(Math.random() * 1000), avatar: 'https://i.pravatar.cc/150?u=me' };
-      setUser(mockResult);
-      localStorage.setItem('coldgram_user', JSON.stringify(mockResult));
+      if (isAppwriteReady) {
+          // NOTE: In the iframe preview, Google login page is blocked by X-Frame-Options.
+          // You must test this by opening the app in a "New Tab" via the icon at the top right.
+          const redirectUrl = window.location.href;
+          try {
+              account.createOAuth2Session(OAuthProvider.Google, redirectUrl, redirectUrl);
+          } catch (e) {
+              console.error("Appwrite Login Error", e);
+          }
+      } else {
+          // Simulation of Google OAuth result
+          const mockResult = { name: 'GUEST_' + Math.floor(Math.random() * 1000), avatar: 'https://i.pravatar.cc/150?u=me' };
+          setUser(mockResult);
+          localStorage.setItem('coldgram_user', JSON.stringify(mockResult));
+      }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+      if (isAppwriteReady) {
+          try {
+              await account.deleteSession('current');
+          } catch (e) {
+              console.error("Appwrite Logout Error", e);
+          }
+      }
       setUser(null);
       localStorage.removeItem('coldgram_user');
   };
